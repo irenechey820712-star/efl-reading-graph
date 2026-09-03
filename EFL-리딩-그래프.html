@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EFL 리딩 그래프</title>
+<meta name="description" content="영어 지문을 넣으면 근거 검색·본문 검증·재검색 루프를 거쳐 답하는 과정을 그래프로 보여주는 교사·연수용 단일 HTML 도구">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --paper:#e9ecef; --surface:#ffffff; --surface-2:#f0f2f6;
+    --ink:#1a1e24; --dim:#565f6b; --faint:#89929d;
+    --line:#d3d9e0; --line-strong:#bec6cf;
+    --accent:#584fa3; --accent-soft:#e8e6f5;
+    --pass:#1e7a51; --pass-soft:#dff0e8;
+    --retry:#a1651b; --retry-soft:#f5ead8;
+    --flag:#b23a2c; --flag-soft:#f6e4e1;
+    --shadow:0 1px 2px rgba(20,25,45,.05), 0 14px 34px -20px rgba(20,25,45,.20);
+    --radius:11px;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#12141a; --surface:#1b1e26; --surface-2:#22262f;
+    --ink:#e6e9ee; --dim:#98a1ad; --faint:#69727e;
+    --line:#2b303a; --line-strong:#3a414d;
+    --accent:#a39bf0; --accent-soft:#22203a;
+    --pass:#54c08e; --pass-soft:#16261e;
+    --retry:#d69a4b; --retry-soft:#2b2416;
+    --flag:#e07a6c; --flag-soft:#301f1d;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 16px 38px -22px rgba(0,0,0,.65);
+    color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --paper:#12141a; --surface:#1b1e26; --surface-2:#22262f;
+    --ink:#e6e9ee; --dim:#98a1ad; --faint:#69727e;
+    --line:#2b303a; --line-strong:#3a414d;
+    --accent:#a39bf0; --accent-soft:#22203a;
+    --pass:#54c08e; --pass-soft:#16261e;
+    --retry:#d69a4b; --retry-soft:#2b2416;
+    --flag:#e07a6c; --flag-soft:#301f1d;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 16px 38px -22px rgba(0,0,0,.65);
+    color-scheme:dark;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  img{max-width:100%}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans KR",system-ui,-apple-system,sans-serif;
+    font-size:15px; line-height:1.62;
+  }
+  h1,h2,h3{font-family:"Fraunces",Georgia,serif; font-weight:600; margin:0; line-height:1.22; text-wrap:balance}
+  button,select,textarea,input{font:inherit; color:inherit}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  header{
+    display:flex; align-items:baseline; gap:.9rem; flex-wrap:wrap;
+    padding:1.1rem clamp(1rem,3vw,2rem) .95rem;
+    background:var(--surface); border-bottom:1px solid var(--line);
+  }
+  header h1{font-size:1.4rem; font-weight:700; letter-spacing:-.01em}
+  header .tag{color:var(--dim); font-size:.84rem; flex:1 1 15rem; min-width:0}
+  header .tools{display:flex; gap:.4rem}
+  .ghost{background:transparent; border:1px solid var(--line-strong); color:var(--dim);
+    padding:.34rem .62rem; border-radius:7px; cursor:pointer; font-size:.8rem}
+  .ghost:hover{border-color:var(--accent); color:var(--accent)}
+
+  main{
+    display:grid; gap:1px; background:var(--line);
+    grid-template-columns:minmax(0,1fr); max-width:1440px; margin:0 auto;
+  }
+  @media (min-width:1000px){ main{grid-template-columns:minmax(320px,25rem) minmax(0,1fr)} }
+  .pane{background:var(--paper); padding:clamp(1rem,2.4vw,1.5rem)}
+  .pane.inputs{display:flex; flex-direction:column; gap:.95rem}
+  .pane.stage{display:flex; flex-direction:column; gap:1.15rem}
+
+  .field{display:flex; flex-direction:column; gap:.34rem}
+  .field > label{font-weight:600; font-size:.85rem; display:flex; justify-content:space-between; gap:.5rem; align-items:baseline}
+  .field .hint{color:var(--faint); font-weight:400; font-size:.74rem}
+  textarea,input[type=text],input[type=password],select{
+    width:100%; background:var(--surface); color:var(--ink);
+    border:1px solid var(--line-strong); border-radius:8px; padding:.55rem .7rem;
+    font-size:.87rem; line-height:1.55;
+  }
+  textarea{resize:vertical; min-height:11rem}
+  textarea:focus-visible,input:focus-visible,select:focus-visible{border-color:var(--accent)}
+
+  .box{border:1px solid var(--line); border-radius:8px; background:var(--surface-2); padding:.75rem .8rem; display:flex; flex-direction:column; gap:.6rem}
+  .box.api .field > label{font-size:.8rem}
+  .apinote{font-size:.72rem; color:var(--faint); line-height:1.5; margin:0; border-top:1px dashed var(--line); padding-top:.5rem}
+  .apinote b{color:var(--dim)}
+  .linkbtn{background:none; border:0; padding:0; color:var(--accent); cursor:pointer; font-size:.72rem; text-decoration:underline}
+  .keystate{font-size:.72rem; font-weight:600}
+  .keystate.on{color:var(--pass)} .keystate.off{color:var(--faint)}
+
+  .settings{border:1px solid var(--line); border-radius:8px; background:var(--surface-2); padding:.7rem .8rem; display:flex; flex-direction:column; gap:.55rem; font-size:.8rem; color:var(--dim)}
+  .settings .row{display:flex; align-items:center; justify-content:space-between; gap:.7rem}
+  .settings input[type=range]{flex:0 0 8.5rem}
+  .settings b{color:var(--ink); font-weight:600}
+  .settings .foot{border-top:1px dashed var(--line); padding-top:.45rem; color:var(--faint); font-size:.72rem; line-height:1.45}
+
+  .qrow{display:flex; gap:.4rem; margin-top:.05rem}
+  .ghost.sm{font-size:.74rem; padding:.28rem .55rem}
+  .qchips{display:flex; flex-direction:column; gap:.3rem; margin-top:.15rem}
+  .qchip{text-align:left; background:var(--surface); border:1px solid var(--line-strong); border-radius:7px; padding:.4rem .55rem; font-size:.77rem; cursor:pointer; color:var(--ink); line-height:1.45}
+  .qchip:hover{border-color:var(--accent)}
+  .qchip b{color:var(--accent); font-family:"IBM Plex Mono",monospace; font-size:.66rem; margin-right:.4rem; letter-spacing:.02em}
+
+  .run-row{display:flex; gap:.55rem; align-items:center; flex-wrap:wrap}
+  .run{background:var(--accent); color:#fff; border:0; border-radius:8px; padding:.62rem 1.1rem; font-weight:600; font-size:.92rem; cursor:pointer}
+  .run:hover{filter:brightness(1.07)}
+  .run:disabled{opacity:.5; cursor:not-allowed; filter:none}
+  .stop{background:transparent; border:1px solid var(--line-strong); color:var(--dim); border-radius:8px; padding:.55rem .8rem; cursor:pointer; font-size:.85rem}
+  .status{font-size:.76rem; color:var(--faint)}
+  .status.err{color:var(--flag)}
+
+  .graphwrap{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:1rem .8rem .7rem}
+  .graphwrap .ghead{display:flex; align-items:baseline; justify-content:space-between; gap:.7rem; margin:0 .3rem .3rem}
+  .graphwrap h2{font-size:1rem}
+  .ex-tag{font-size:.7rem; font-weight:600; letter-spacing:.04em; color:var(--retry); background:var(--retry-soft); padding:.14rem .55rem; border-radius:999px}
+  .gflex{display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap}
+  figure.graph{margin:0; flex:0 0 auto}
+  figure.graph svg{width:236px; height:auto; max-width:100%}
+  svg text{fill:var(--ink); font-family:"IBM Plex Sans KR",sans-serif}
+  svg marker path{fill:var(--faint)}
+  .node rect{fill:var(--surface); stroke:var(--line-strong); stroke-width:1.4; transition:fill .2s,stroke .2s}
+  .node .rl{fill:var(--faint); font-size:8.5px}
+  .node.active rect{stroke:var(--accent); stroke-width:2.4}
+  .node.active .nm{fill:var(--accent)}
+  .node.done rect{fill:var(--accent-soft); stroke:var(--accent)}
+  .node.pass rect{fill:var(--pass-soft); stroke:var(--pass)}
+  .node.skip rect{opacity:.4}
+  .edge{stroke:var(--faint); stroke-width:1.5; fill:none; marker-end:url(#ah)}
+  .edge.lbl{fill:var(--faint); stroke:none; font-size:8.5px}
+  .edge.retry{stroke-dasharray:4 3}
+  .edge.retry.taken{stroke:var(--retry); stroke-dasharray:0}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+  @media (prefers-reduced-motion:no-preference){ .node.active rect{animation:pulse 1.1s ease-in-out infinite} }
+
+  .legend{flex:1 1 12rem; font-size:.76rem; color:var(--dim); display:flex; flex-direction:column; gap:.3rem; min-width:11rem}
+  .legend .k{display:flex; gap:.45rem; align-items:center}
+  .legend .sw{width:.8rem; height:.8rem; border-radius:3px; border:1px solid var(--line-strong); flex:0 0 auto}
+  .legend .sw.a{background:var(--accent-soft); border-color:var(--accent)}
+  .legend .sw.p{background:var(--pass-soft); border-color:var(--pass)}
+  .legend .sw.r{background:var(--retry)}
+
+  .trace{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+  .trace h2{font-size:.95rem; padding:.75rem .9rem; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline}
+  .trace h2 .meta{font-size:.74rem; color:var(--faint); font-weight:400}
+  .trace ol{margin:0; padding:.4rem .3rem .5rem; list-style:none; counter-reset:t}
+  .trace li{counter-increment:t; display:grid; grid-template-columns:1.4rem 6.2rem 1fr auto; gap:.5rem; align-items:baseline; padding:.4rem .6rem; font-size:.8rem}
+  .trace li::before{content:counter(t); color:var(--faint); font-family:"IBM Plex Mono",monospace; font-size:.72rem; text-align:right}
+  .trace li .n{font-family:"IBM Plex Mono",monospace; font-weight:600; color:var(--accent)}
+  .trace li .n.retry{color:var(--retry)} .trace li .n.pass{color:var(--pass)}
+  .trace li .s{color:var(--dim)}
+  .trace li .t{color:var(--faint); font-family:"IBM Plex Mono",monospace; font-size:.72rem}
+  @media (max-width:520px){ .trace li{grid-template-columns:1.2rem 1fr} .trace li .t{display:none} }
+
+  .result{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+  .result > h3{font-size:.9rem; font-weight:600; padding:.7rem .9rem; margin:0; cursor:pointer; display:flex; align-items:center; gap:.55rem; border-bottom:1px solid transparent}
+  .result.open > h3{border-bottom-color:var(--line)}
+  .result > h3 .caret{margin-left:auto; color:var(--faint); font-size:.8rem; transition:transform .15s}
+  .result.open > h3 .caret{transform:rotate(90deg)}
+  .result .rbody{padding:.85rem .95rem; font-size:.86rem}
+  .result:not(.open) .rbody{display:none}
+  .pill{font-family:"IBM Plex Mono",monospace; font-size:.7rem; font-weight:600; padding:.1rem .5rem; border-radius:999px}
+  .pill.pass{background:var(--pass-soft); color:var(--pass)}
+  .pill.retry{background:var(--retry-soft); color:var(--retry)}
+
+  .evi{display:flex; flex-direction:column; gap:.5rem}
+  .evi .chunk{border-left:3px solid var(--accent); background:var(--accent-soft); padding:.5rem .7rem; border-radius:0 6px 6px 0; font-size:.82rem}
+  .evi .chunk .lab{font-family:"IBM Plex Mono",monospace; font-size:.68rem; color:var(--accent); font-weight:600; display:block; margin-bottom:.2rem}
+  .passage-view{margin-top:.6rem; font-size:.82rem; color:var(--dim); line-height:1.7; border-top:1px dashed var(--line); padding-top:.5rem}
+  .passage-view mark{background:var(--retry-soft); color:inherit; padding:0 .1em; border-radius:2px}
+
+  .prose{white-space:pre-wrap; line-height:1.66}
+
+  .selftask{border:1px solid var(--pass); background:var(--pass-soft); border-radius:var(--radius); padding:.85rem 1rem}
+  .selftask h3{font-size:.95rem; color:var(--pass); display:flex; gap:.4rem; align-items:center}
+  .selftask .prose{margin-top:.4rem; font-size:.87rem}
+
+  .reflect{border:1px dashed var(--line-strong); border-radius:var(--radius); padding:.85rem 1rem; background:var(--surface-2); font-size:.82rem}
+  .reflect h3{font-size:.9rem; margin-bottom:.4rem}
+  .reflect ol{margin:.2rem 0 0; padding-left:1.1rem; color:var(--dim); display:flex; flex-direction:column; gap:.25rem}
+
+  .spinner{display:inline-block; width:.8rem; height:.8rem; border:2px solid var(--line-strong); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; vertical-align:-.12em}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ .spinner,.node.active rect{animation:none} }
+
+  footer{padding:1rem clamp(1rem,3vw,2rem) 2.2rem; color:var(--faint); font-size:.75rem; max-width:1440px; margin:0 auto; line-height:1.55}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>EFL 리딩 그래프</h1>
+  <p class="tag"><b>영어 지문만 넣고 실행</b>하면 됩니다(질문은 비워두면 자동 생성). 근거 검색 → 답변 → 본문 검증 → 부족하면 재검색 → 최종 답변 + 자기언어화 과제. 브라우저에서 바로 도는 <b>단일 HTML 파일</b>.</p>
+  <div class="tools">
+    <button class="ghost" id="reset">샘플 되돌리기</button>
+    <button class="ghost" id="theme">테마</button>
+  </div>
+</header>
+
+<main>
+  <section class="pane inputs">
+    <div class="box api">
+      <div class="field">
+        <label>LLM 제공자 <span class="keystate off" id="keystate">키 없음</span></label>
+        <select id="provider">
+          <option value="gemini">Google Gemini (무료 티어)</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>API 키 <span class="hint" id="keyhint">aistudio.google.com/apikey</span></label>
+        <input type="password" id="apikey" placeholder="키 붙여넣기" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label>모델 <span class="hint" id="modelHint">gemini-2.0-flash</span></label>
+        <input type="text" id="model" placeholder="비우면 기본값">
+      </div>
+      <p class="apinote">키는 <b>이 컴퓨터 브라우저(localStorage)</b>에만 저장되고 선택한 제공자 API로만 전송됩니다. 공용 PC에서는 사용 후 <button class="linkbtn" id="clearkey">키 지우기</button>.</p>
+    </div>
+
+    <div class="field">
+      <label>① 영어 지문 <span class="hint">교과서·EBS·수능형</span></label>
+      <textarea id="passage"></textarea>
+    </div>
+    <div class="field">
+      <label>② 학생 질문 <span class="hint">비워두면 지문에서 자동 생성</span></label>
+      <input type="text" id="question">
+      <div class="qrow"><button class="ghost sm" id="suggest" disabled>지문에서 질문 제안 3개</button></div>
+      <div class="qchips" id="qchips"></div>
+    </div>
+    <div class="settings">
+      <div class="row"><span>검색 근거 수 <b id="kVal">2</b>개부터</span><input type="range" id="k" min="1" max="4" value="2" aria-label="검색 근거 시작 개수"></div>
+      <div class="row"><span>최대 재검색 <b id="rVal">1</b>회</span><input type="range" id="r" min="0" max="3" value="1" aria-label="최대 재검색 횟수"></div>
+      <p class="foot">재검색마다 근거 수를 1개씩 늘려(최대 4개) 다시 검증합니다 — 값을 바꿔 실행하면 그래프 경로가 달라집니다. 청킹·검색은 브라우저에서 결정적으로 계산하고, 답변·검증·최종화만 LLM API를 호출합니다.</p>
+    </div>
+    <div class="run-row">
+      <button class="run" id="run" disabled>그래프 실행</button>
+      <button class="stop" id="stop" hidden>중단</button>
+      <span class="status" id="status">API 키를 입력하세요</span>
+    </div>
+  </section>
+
+  <section class="pane stage" id="stage"></section>
+</main>
+
+<footer>
+  답변은 <b>제공된 지문 근거만</b> 사용하도록 지시되며, 검증 노드가 본문과 다시 대조합니다. 그래도 최종 판단은 교사·학생의 몫입니다.
+  실행은 입력한 API 키로 직접 호출되고 키는 이 브라우저에만 저장됩니다. 학생 개인정보는 지문·질문에 넣지 마세요.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+  /* ---------------- config (persisted) ---------------- */
+  const LS = "efl-reading-graph-cfg";
+  const DEFAULT_MODEL = { gemini:"gemini-2.0-flash", openai:"gpt-5-mini" };
+  const KEY_HINT = { gemini:"aistudio.google.com/apikey", openai:"platform.openai.com/api-keys" };
+  const cfg = { provider:"gemini", key:"", model:"" };
+  try{ Object.assign(cfg, JSON.parse(localStorage.getItem(LS) || "{}")); }catch(_){}
+  function saveCfg(){ try{ localStorage.setItem(LS, JSON.stringify(cfg)); }catch(_){} }
+  const llmReady = () => !!(cfg.key && cfg.key.trim());
+
+  /* ---------------- sample content ---------------- */
+  const SAMPLE = {
+    passage:
+`K-pop fandom culture has undergone rapid transformation as digital technology has advanced. Fans are no longer merely consumers of music and performances. Through social media platforms, they translate content, organize streaming campaigns, create fan-made media, and communicate directly with other fans around the world. This increased participation gives fans a more active role in shaping how K-pop circulates globally. However, participation does not mean that fans completely control the industry. Entertainment companies still make many of the major commercial and production decisions.
+
+Scholars describe this shift with the term "produsage," a blend of production and usage. It captures how the boundary between making media and consuming it has become blurred. A fan who subtitles a music video in three languages is not only watching the video; she is extending its reach to audiences the company never targeted directly. In this sense, fan labor has measurable effects on how far and how fast K-pop travels.
+
+Yet this labor is mostly unpaid and often invisible. Companies benefit from the translations, the trending hashtags, and the organized voting, but they rarely share revenue or decision-making power with the fans who generate that value. Critics argue that fandom participation can therefore look empowering while leaving the underlying hierarchy largely unchanged.`,
+    question: "Why does the author say fan participation is not the same as controlling the industry?"
+  };
+
+  const STOP = new Set(["the","a","an","is","are","was","were","to","of","and","or","in","on","for","what","why","how","which","who","this","that","it","be","do","does","did"]);
+
+  /* ---------------- pure graph functions (ported from graph.py) ---------------- */
+  function chunkPassage(text, maxChars){
+    maxChars = maxChars || 650;
+    const paras = text.split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean);
+    const out = [];
+    for(const p of paras){
+      if(p.length <= maxChars){ out.push(p); continue; }
+      const sents = p.split(/(?<=[.!?])\s+/);
+      let buf = "";
+      for(const s of sents){
+        if(buf && buf.length + s.length + 1 > maxChars){ out.push(buf.trim()); buf = s; }
+        else buf = (buf + " " + s).trim();
+      }
+      if(buf) out.push(buf.trim());
+    }
+    return out.length ? out : [text.trim()];
+  }
+  function terms(str){
+    return new Set((str.toLowerCase().match(/[a-z가-힣']+/g) || []).filter(w=>w.length>1 && !STOP.has(w)));
+  }
+  function lexicalRetrieve(chunks, question, k){
+    const q = terms(question);
+    const scored = chunks.map((c,i)=>{
+      const t = new Set((c.toLowerCase().match(/[a-z가-힣']+/g) || []));
+      let overlap = 0; q.forEach(w=>{ if(t.has(w)) overlap++; });
+      return { overlap, tie:-i, c, i };
+    });
+    scored.sort((a,b)=> b.overlap - a.overlap || b.tie - a.tie);
+    return scored.slice(0, k);
+  }
+  function highlightPassage(text, question){
+    const q = [...terms(question)].sort((a,b)=>b.length-a.length);
+    if(!q.length) return esc(text);
+    const re = new RegExp("("+q.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");
+    return esc(text).replace(re, "<mark>$1</mark>");
+  }
+
+  /* ---------------- prompts (ported) ---------------- */
+  const evidenceBlock = arr => arr.map((x,i)=>`[근거 ${i+1}]\n${x}`).join("\n\n");
+  function genPrompt(q, ret){
+    return `당신은 EFL 독해 튜터다. 아래 '지문 근거'에 있는 내용만으로 답한다. 근거가 부족하면 부족하다고 분명히 말한다. 배경지식을 지어내지 않는다.
+
+학생 질문:
+${q}
+
+지문 근거:
+${evidenceBlock(ret)}
+
+다음 형식으로 답한다:
+1. 답변 — 한국어로 간결하게, 필요하면 핵심 영어 표현을 유지.
+2. 근거 — 중요한 주장마다 [근거 n]을 표시.
+3. 불확실 — 지문으로 직접 뒷받침되지 않는 부분.`;
+  }
+  function gradePrompt(q, ret, ans){
+    return `당신은 EFL 교실의 엄격한 '본문 근거 검증자'다.
+
+질문:
+${q}
+
+지문 근거:
+${evidenceBlock(ret)}
+
+AI 답변:
+${ans}
+
+답변이 근거로 완전히 뒷받침되는지 판정한다.
+첫 줄에 정확히 다음 중 하나만 출력한다:
+GRADE: PASS
+또는
+GRADE: RETRY
+
+그다음 줄에:
+이유: ...
+미뒷받침: ...`;
+  }
+  function finalPrompt(q, ans, ver){
+    return `당신은 학습자 주도성을 설계하는 영어 교사다.
+
+질문:
+${q}
+
+검토된 답변:
+${ans}
+
+검증 결과:
+${ver}
+
+한국어로 두 가지를 만든다.
+
+최종 답변:
+- 본문에 근거한 최선의 답.
+- 직접적 본문 근거와 추론을 명확히 구분.
+- 뒷받침되지 않는 사실 추가 금지.
+
+자기언어화 과제:
+- 학생이 그 아이디어를 자신의 영어로 다시 쓰게 하는 짧은 과제 1개.
+- 학생의 최종 문장을 대신 써 주지 말 것.
+- 본문 근거 1개를 인용하도록 요구.`;
+  }
+
+  /* ---------------- precomputed example run ---------------- */
+  const EXAMPLE = {
+    trace: [
+      {node:"prepare", summary:"지문을 3개 chunk로 분할", ms:2},
+      {node:"retrieve", summary:"질문 관련 근거 chunk 2개 검색 (근거 1·2)", ms:3},
+      {node:"generate", summary:"검색 근거만 사용해 1차 답변 생성", ms:5200},
+      {node:"grade", summary:"근거 부족 탐지 — '통제와 다르다'의 경제·위계 근거가 검색에 안 들어옴 → 재검색 필요", ms:3100, kind:"retry"},
+      {node:"retry", summary:"검색 범위를 3개로 넓혀 한 번 더 검증 루프 실행", ms:1},
+      {node:"retrieve", summary:"근거 chunk 3개 검색 (근거 1·2·3) — 3문단 포함", ms:3},
+      {node:"generate", summary:"넓힌 근거로 답변 재생성", ms:4800},
+      {node:"grade", summary:"본문 근거 검증 통과", ms:2600, kind:"pass"},
+      {node:"finalize", summary:"검증 결과를 반영한 최종 답변 + 자기언어화 과제 생성", ms:5400}
+    ],
+    firstAnswer:
+`1. 답변
+저자는 팬들이 K-pop이 세계로 퍼지는 방식에 더 능동적인 역할을 하게 되었다고 말하지만, 그렇다고 팬들이 산업을 "완전히 통제"하는 것은 아니라고 선을 긋습니다. 주요 상업적·제작 결정은 여전히 기획사가 내리기 때문입니다.
+
+2. 근거
+- 팬 참여 확대가 "a more active role"을 준다 [근거 1]
+- "participation does not mean that fans completely control the industry" [근거 1]
+- 주요 결정은 엔터테인먼트 회사가 한다 [근거 1]
+
+3. 불확실
+- 참여가 왜 "통제"까지 가지 못하는지에 대한 구조적 이유(수익 배분·의사결정권)는 [근거 1·2]에 나와 있지 않아 단정하기 어렵습니다.`,
+    verification:
+`GRADE: RETRY
+이유: 답변의 핵심 주장("참여 ≠ 통제")은 [근거 1] 한 문장에만 기대고 있고, 그 이유를 설명하는 근거(수익·의사결정권 미공유, 위계 유지)는 검색된 근거에 포함되지 않았다.
+미뒷받침: "왜" 통제에 이르지 못하는가 — 경제적·구조적 설명.`,
+    finalAnswer:
+`저자가 팬 참여를 산업 "통제"와 구분하는 이유는 두 가지로 정리됩니다.
+
+① 직접적 본문 근거
+- 팬들은 번역·스트리밍·팬 제작물·소통을 통해 K-pop의 세계적 유통에 "a more active role"을 하지만, 지문은 곧바로 "participation does not mean that fans completely control the industry"라고 못박습니다 (1문단).
+- 주요 상업적·제작 결정은 여전히 기획사가 내립니다 (1문단).
+- 기획사는 번역·해시태그·조직적 투표의 이익은 가져가면서 "rarely share revenue or decision-making power with the fans" (3문단).
+
+② 추론 (본문 단서에 기반)
+- 따라서 참여는 영향력은 있으나 권한은 없는 상태입니다. 비평가들의 표현대로 "empowering해 보이지만 근본적 위계는 거의 그대로"입니다 (3문단).
+
+즉 팬의 노동은 K-pop이 "얼마나 멀리·빠르게" 퍼지는지에는 영향을 주지만(measurable effects, 2문단), 무엇을 만들고 어떻게 수익을 나눌지는 결정하지 못합니다.`,
+    selfTask:
+`본문에서 근거 문장 1개를 골라 인용한 뒤, "Fan participation is influential but not controlling because ___." 형태의 한 문장을 자신의 영어로 완성해 보세요. (기획사가 여전히 쥐고 있는 것이 무엇인지 3문단 표현을 활용) — 정답 문장은 제공하지 않습니다.`
+  };
+
+  /* ---------------- state ---------------- */
+  const NODES = ["elicit","prepare","retrieve","generate","grade","retry","finalize"];
+  const ROLE = {
+    elicit:"질문 생성", prepare:"지문 분할", retrieve:"근거 검색", generate:"근거로 답변",
+    grade:"본문 검증", retry:"범위 확대", finalize:"최종화 + 자기언어화"
+  };
+  const state = {
+    running:false, error:null, isExample:true,
+    nodeState:{}, trace:[], retryTaken:false, suggestedQ:[],
+    chunks:[], retrieved:[], firstAnswer:"", verification:"", grade:"",
+    finalAnswer:"", selfTask:"",
+    open:new Set(["evi","first","grade","final","task"])
+  };
+  let ctl = null;
+
+  /* ---------------- LLM call ---------------- */
+  async function httpMsg(res){
+    let detail = "";
+    try{ const j = await res.json(); detail = (j.error && (j.error.message || j.error.status)) || ""; }catch(_){}
+    if(res.status === 400) return "요청이 거부되었습니다 (400)" + (detail ? " — " + detail : "");
+    if(res.status === 401 || res.status === 403) return "API 키가 거부되었습니다 (" + res.status + "). 키·제공자를 확인하세요.";
+    if(res.status === 404) return "모델명을 찾을 수 없습니다 (404). 모델명을 확인하세요.";
+    if(res.status === 429) return "요청 한도 초과 (429). 잠시 후 다시 시도하세요.";
+    return "요청 실패 (" + res.status + ")" + (detail ? " — " + detail : "");
+  }
+
+  async function callModel(prompt, opts){
+    opts = opts || {};
+    const provider = cfg.provider;
+    const key = (cfg.key || "").trim();
+    const model = (cfg.model || "").trim() || DEFAULT_MODEL[provider];
+    if(!key) throw new Error("API 키를 입력하세요.");
+
+    let res, data, text;
+    if(provider === "gemini"){
+      const url = "https://generativelanguage.googleapis.com/v1beta/models/" +
+        encodeURIComponent(model) + ":generateContent?key=" + encodeURIComponent(key);
+      const body = {
+        contents:[{ role:"user", parts:[{ text: prompt }] }],
+        generationConfig: Object.assign({ temperature: 0.1 }, opts.jsonHint ? { responseMimeType:"application/json" } : {})
+      };
+      res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body), signal: opts.signal });
+      if(!res.ok) throw new Error(await httpMsg(res));
+      data = await res.json();
+      const cand = data.candidates && data.candidates[0];
+      text = ((cand && cand.content && cand.content.parts) || []).map(p=>p.text||"").join("").trim();
+    } else {
+      res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":"Bearer " + key },
+        body: JSON.stringify({ model, messages:[{ role:"user", content: prompt }], temperature: 0.1 }),
+        signal: opts.signal
+      });
+      if(!res.ok) throw new Error(await httpMsg(res));
+      data = await res.json();
+      text = ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "").trim();
+    }
+    if(!text) throw new Error("응답이 비었습니다. 모델명과 키를 확인하세요.");
+    return text;
+  }
+
+  function tolerantJSON(raw){
+    const tryP = s => { try{ return JSON.parse(s); }catch(_){ return undefined; } };
+    let v = tryP(String(raw).trim());
+    if(v !== undefined) return v;
+    const fence = String(raw).match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if(fence){ v = tryP(fence[1].trim()); if(v !== undefined) return v; }
+    const a = raw.indexOf("["), b = raw.lastIndexOf("]");
+    if(a>=0 && b>a){ v = tryP(raw.slice(a,b+1)); if(v !== undefined) return v; }
+    const c = raw.indexOf("{"), d = raw.lastIndexOf("}");
+    if(c>=0 && d>c){ v = tryP(raw.slice(c,d+1)); if(v !== undefined) return v; }
+    return null;
+  }
+
+  /* ---------------- graph SVG ---------------- */
+  function graphSVG(){
+    const y = {elicit:28, prepare:92, retrieve:156, generate:220, grade:284, finalize:356};
+    const box = (id, x, w) => `
+      <g class="node" data-node="${id}">
+        <rect x="${x}" y="${y[id]-16}" width="${w}" height="32" rx="7"></rect>
+        <text class="nm" x="${x+w/2}" y="${y[id]-2}" text-anchor="middle" font-size="11" font-weight="600">${id}</text>
+        <text class="rl" x="${x+w/2}" y="${y[id]+10}" text-anchor="middle">${ROLE[id]}</text>
+      </g>`;
+    return `
+    <svg viewBox="0 0 236 392" role="img" aria-label="LangGraph 노드 흐름: (질문 없으면) elicit, prepare, retrieve, generate, grade, 그리고 grade에서 PASS면 finalize, RETRY면 retrieve로 되돌아가는 순환">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+      <path class="edge" d="M60 ${y.elicit+16} L60 ${y.prepare-16}"/>
+      <path class="edge" d="M60 ${y.prepare+16} L60 ${y.retrieve-16}"/>
+      <path class="edge" d="M60 ${y.retrieve+16} L60 ${y.generate-16}"/>
+      <path class="edge" d="M60 ${y.generate+16} L60 ${y.grade-16}"/>
+      <path class="edge" d="M60 ${y.grade+16} L60 ${y.finalize-16}"/>
+      <text class="edge lbl" x="66" y="${(y.grade+y.finalize)/2+3}">PASS</text>
+      <path class="edge retry" id="retryEdge" d="M112 ${y.grade} C 212 ${y.grade}, 212 ${y.retrieve}, 118 ${y.retrieve}"/>
+      <text class="edge lbl rlab" id="rlab" x="150" y="202">RETRY</text>
+      ${box("elicit",12,96)}
+      ${box("prepare",12,96)}
+      ${box("retrieve",12,96)}
+      ${box("generate",12,96)}
+      ${box("grade",12,100)}
+      ${box("finalize",12,110)}
+    </svg>`;
+  }
+
+  function setNode(id, cls){ state.nodeState[id] = cls; paintGraph(); }
+  function paintGraph(){
+    NODES.forEach(id=>{
+      const g = $(`[data-node="${id}"]`); if(!g) return;
+      g.setAttribute("class", "node" + (state.nodeState[id] ? " " + state.nodeState[id] : ""));
+    });
+    const re = $("#retryEdge"), rl = $("#rlab");
+    if(re) re.setAttribute("class", "edge retry" + (state.retryTaken ? " taken" : ""));
+    if(rl) rl.style.fill = state.retryTaken ? "var(--retry)" : "var(--faint)";
+  }
+
+  /* ---------------- render ---------------- */
+  function render(){
+    const ready = llmReady();
+    $("#run").disabled = !ready || state.running;
+    $("#suggest").disabled = !ready || state.running;
+    $("#stop").hidden = !state.running;
+    $("#keystate").textContent = ready ? "키 저장됨" : "키 없음";
+    $("#keystate").className = "keystate " + (ready ? "on" : "off");
+
+    const st = $("#status");
+    if(state.running){ st.className="status"; st.innerHTML = '<span class="spinner"></span> 실행 중… (수 초~1분)'; }
+    else if(state.error){ st.className="status err"; st.textContent = state.error; }
+    else if(!ready){ st.className="status"; st.textContent = "API 키를 입력하면 실행됩니다 (지금은 예시 표시)"; }
+    else { st.className="status"; st.textContent = "‘그래프 실행’ 준비됨"; }
+
+    const ex = state.isExample;
+    const stage = $("#stage");
+    stage.innerHTML = `
+      <div class="graphwrap">
+        <div class="ghead"><h2>그래프 실행 ${ex?'<span class="ex-tag">예시</span>':""}</h2></div>
+        <div class="gflex">
+          <figure class="graph">${graphSVG()}</figure>
+          <div class="legend">
+            <div class="k"><span class="sw a"></span> 실행/완료된 노드</div>
+            <div class="k"><span class="sw p"></span> 검증 통과(PASS)</div>
+            <div class="k"><span class="sw r"></span> RETRY 경로를 실제로 탄 경우</div>
+            <p style="color:var(--faint);font-size:.72rem;line-height:1.5;margin:.3rem 0 0">
+              질문을 비워두면 <b>elicit</b>가 지문에서 질문을 만든 뒤 시작합니다. grade가 <b>RETRY</b>를 내면 retrieve로 되돌아가 근거를 넓혀 다시 답합니다 — 이 되돌아가기가 선형 체인엔 없는 부분입니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="trace">
+        <h2>실행 로그 (trace) <span class="meta">${state.trace.length}단계 · 재검색 ${state.trace.filter(t=>t.node==="retry").length}회</span></h2>
+        <ol>${state.trace.map(t=>`
+          <li>
+            <span class="n ${t.kind||""}">${t.node}</span>
+            <span class="s">${esc(t.summary)}</span>
+            <span class="t">${t.ms!=null?(t.ms<10?t.ms+"ms":(t.ms/1000).toFixed(1)+"s"):""}</span>
+          </li>`).join("") || '<li><span></span><span class="s">아직 실행 전입니다.</span><span></span></li>'}
+        </ol>
+      </div>
+
+      ${state.retrieved.length ? resultBlock("evi","검색된 본문 근거", eviHTML()) : ""}
+      ${state.firstAnswer ? resultBlock("first","1차 답변 (generate)", `<div class="prose">${esc(state.firstAnswer)}</div>`) : ""}
+      ${state.verification ? resultBlock("grade","근거 검증 (grade)", `<div class="prose">${esc(state.verification)}</div>`, gradePill()) : ""}
+      ${state.finalAnswer ? resultBlock("final","최종 답변 (finalize)", `<div class="prose">${esc(state.finalAnswer)}</div>`) : ""}
+      ${state.selfTask ? `<div class="selftask"><h3>&#9997; 자기언어화 과제</h3><div class="prose">${esc(state.selfTask)}</div></div>` : ""}
+      ${(!state.running && (state.finalAnswer || ex)) ? reflectHTML() : ""}
+    `;
+
+    paintGraph();
+    stage.querySelectorAll(".result > h3").forEach(h=>{
+      h.setAttribute("role","button"); h.setAttribute("tabindex","0");
+      const id = h.parentElement.dataset.k;
+      const tg = ()=>{ state.open.has(id)?state.open.delete(id):state.open.add(id); h.parentElement.classList.toggle("open"); };
+      h.addEventListener("click", tg);
+      h.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tg(); } });
+    });
+  }
+
+  function resultBlock(id, title, inner, extra){
+    const open = state.open.has(id);
+    return `<article class="result ${open?"open":""}" data-k="${id}">
+      <h3>${esc(title)} ${extra||""}<span class="caret">&#9656;</span></h3>
+      <div class="rbody">${inner}</div>
+    </article>`;
+  }
+  function gradePill(){
+    if(!state.grade) return "";
+    const p = state.grade === "PASS" ? "pass" : "retry";
+    return `<span class="pill ${p}">GRADE: ${state.grade}</span>`;
+  }
+  function eviHTML(){
+    const chunks = state.chunks;
+    const list = state.retrieved.map(r=>`
+      <div class="chunk"><span class="lab">근거 ${r.i+1}${r.overlap!=null?` &middot; 어휘 겹침 ${r.overlap}`:""}</span>${esc(r.c)}</div>`).join("");
+    const q = $("#question").value || SAMPLE.question;
+    return `<div class="evi">${list}
+      <div class="passage-view"><b style="color:var(--dim)">지문 전체</b> — 질문 어휘 강조 &middot; 전체 ${chunks.length}개 chunk 중 위 ${state.retrieved.length}개 선택<br><br>${highlightPassage($("#passage").value||SAMPLE.passage, q)}</div>
+    </div>`;
+  }
+  function reflectHTML(){
+    return `<div class="reflect">
+      <h3>실습 관찰</h3>
+      <ol>
+        <li>grade가 RETRY를 냈다면, 1차 답변의 어느 문장이 근거 없이 나갔나요?</li>
+        <li>왼쪽 설정에서 <b>검색 근거 수</b>를 1로 낮추고 다시 실행하면 경로가 어떻게 달라지나요?</li>
+        <li>이 질문은 &lsquo;체인으로 충분&rsquo;했나요, &lsquo;그래프가 필요&rsquo;했나요? 근거 한 줄로.</li>
+      </ol>
+    </div>`;
+  }
+
+  /* ---------------- run ---------------- */
+  async function fetchQuestions(passage, signal){
+    const prompt = `아래 영어 지문을 읽는 고등학생이 물을 법한 독해 질문 3개를 만든다. 응답은 기계가 파싱한다.
+- 사실 확인형 1개, 추론형 1개, 평가·비판형 1개
+- 각 질문은 영어 한 문장, 지문 내용만으로 답할 수 있어야 한다
+
+JSON 배열만 출력한다. 예:
+[{"type":"사실","q":"..."},{"type":"추론","q":"..."},{"type":"평가","q":"..."}]
+
+지문:
+${passage}`;
+    const raw = await callModel(prompt, { jsonHint:true, signal });
+    const data = tolerantJSON(raw);
+    const arr = Array.isArray(data) ? data : (data && Array.isArray(data.questions) ? data.questions : []);
+    return arr.filter(x=>x && x.q).map(x=>({ type:String(x.type||"질문").trim(), q:String(x.q).trim() })).slice(0,4);
+  }
+  function renderQChips(){
+    const el = $("#qchips");
+    el.innerHTML = (state.suggestedQ||[]).map((x,i)=>
+      `<button class="qchip" data-i="${i}"><b>${esc(x.type)}</b>${esc(x.q)}</button>`).join("");
+    el.querySelectorAll(".qchip").forEach(c=>c.addEventListener("click", ()=>{
+      $("#question").value = state.suggestedQ[+c.dataset.i].q;
+      $("#question").focus();
+    }));
+  }
+
+  async function callLLM(prompt){ return await callModel(prompt, { signal: ctl.signal }); }
+
+  async function runGraph(){
+    if(!llmReady() || state.running) return;
+    const passage = $("#passage").value.trim();
+    let question = $("#question").value.trim();
+    if(!passage){ state.error = "영어 지문을 입력하세요."; render(); return; }
+
+    ctl = new AbortController();
+    Object.assign(state, {
+      running:true, error:null, isExample:false, trace:[], retryTaken:false,
+      nodeState:{}, chunks:[], retrieved:[], firstAnswer:"", verification:"",
+      grade:"", finalAnswer:"", selfTask:""
+    });
+    render();
+
+    const startK = +$("#k").value, maxRetry = +$("#r").value;
+    let t0Node = performance.now();
+    const step = (node, summary, kind) => {
+      state.trace.push({ node, summary, kind, ms: Math.round(performance.now()-t0Node) });
+      render();
+    };
+
+    try{
+      // elicit — 질문이 없으면 지문에서 생성
+      if(!question){
+        setNode("elicit","active"); t0Node = performance.now();
+        const qs = await fetchQuestions(passage, ctl.signal);
+        if(!qs.length) throw new Error("질문 자동 생성에 실패했습니다. 질문을 직접 입력해 보세요.");
+        state.suggestedQ = qs; renderQChips();
+        question = (qs.find(x=>/추론|infer/i.test(x.type)) || qs[0]).q;
+        $("#question").value = question;
+        setNode("elicit","done"); step("elicit", `지문에서 질문 자동 생성 → “${question}”`);
+      } else {
+        setNode("elicit","skip");
+      }
+
+      // prepare
+      setNode("prepare","active"); t0Node = performance.now();
+      state.chunks = chunkPassage(passage);
+      await sleep(120);
+      setNode("prepare","done"); step("prepare", `지문을 ${state.chunks.length}개 chunk로 분할`);
+
+      let retryCount = 0, grade = "RETRY";
+      while(true){
+        setNode("retrieve","active"); t0Node = performance.now();
+        const k = Math.min(4, startK + retryCount);
+        state.retrieved = lexicalRetrieve(state.chunks, question, k);
+        await sleep(120);
+        setNode("retrieve","done");
+        step("retrieve", `근거 chunk ${state.retrieved.length}개 검색 (근거 ${state.retrieved.map(r=>r.i+1).join("·")})`);
+
+        setNode("generate","active"); t0Node = performance.now();
+        state.firstAnswer = await callLLM(genPrompt(question, state.retrieved.map(r=>r.c)));
+        setNode("generate","done"); step("generate", retryCount ? "넓힌 근거로 답변 재생성" : "검색 근거만 사용해 1차 답변 생성");
+
+        setNode("grade","active"); t0Node = performance.now();
+        state.verification = await callLLM(gradePrompt(question, state.retrieved.map(r=>r.c), state.firstAnswer));
+        grade = /GRADE:\s*PASS/i.test(state.verification) ? "PASS" : "RETRY";
+        state.grade = grade;
+        setNode("grade", grade === "PASS" ? "pass" : "active");
+        step("grade", grade === "PASS" ? "본문 근거 검증 통과" : "근거 부족/과장 탐지 → 재검색 필요", grade === "PASS" ? "pass" : "retry");
+
+        if(grade === "PASS") break;
+        if(retryCount >= maxRetry){ step("grade", `재검색 한도(${maxRetry}회) 도달 → 현재 답으로 최종화`); break; }
+
+        state.retryTaken = true;
+        setNode("retry","active"); t0Node = performance.now();
+        retryCount++;
+        await sleep(140);
+        setNode("retry","done"); setNode("grade", null); setNode("retrieve", null); setNode("generate", null);
+        step("retry", `검색 범위를 넓혀(근거 ${Math.min(4,startK+retryCount)}개) 한 번 더 검증 루프 실행`, "retry");
+      }
+
+      setNode("finalize","active"); t0Node = performance.now();
+      const finalText = await callLLM(finalPrompt(question, state.firstAnswer, state.verification));
+      const parts = finalText.split(/자기언어화\s*과제\s*[:：]/);
+      state.finalAnswer = parts[0].replace(/최종\s*답변\s*[:：]/,"").trim() || finalText.trim();
+      state.selfTask = (parts[1]||"").trim() || "본문 근거 1개를 인용하고, 핵심 내용을 자신의 영어로 한 문장으로 다시 써 보세요.";
+      setNode("finalize","done"); step("finalize", "검증 결과를 반영한 최종 답변 + 자기언어화 과제 생성");
+
+    }catch(e){
+      if(e && e.name === "AbortError") state.error = "중단했습니다.";
+      else state.error = (e && e.message) ? e.message : "실행 중 오류가 발생했습니다.";
+    }finally{
+      state.running = false;
+      render();
+    }
+  }
+
+  /* ---------------- example ---------------- */
+  function loadExample(){
+    $("#passage").value = SAMPLE.passage;
+    $("#question").value = SAMPLE.question;
+    $("#k").value = 2; $("#r").value = 1; $("#kVal").textContent = "2"; $("#rVal").textContent = "1";
+    const chunks = chunkPassage(SAMPLE.passage);
+    state.suggestedQ = [];
+    renderQChips();
+    Object.assign(state, {
+      isExample:true, running:false, error:null,
+      trace: EXAMPLE.trace.slice(),
+      retryTaken:true,
+      nodeState:{ elicit:"skip", prepare:"done", retrieve:"done", generate:"done", grade:"pass", retry:"done", finalize:"done" },
+      chunks,
+      retrieved: lexicalRetrieve(chunks, SAMPLE.question, 3),
+      firstAnswer: EXAMPLE.firstAnswer,
+      verification: EXAMPLE.verification,
+      grade: "PASS",
+      finalAnswer: EXAMPLE.finalAnswer,
+      selfTask: EXAMPLE.selfTask
+    });
+    render();
+  }
+
+  /* ---------------- wiring ---------------- */
+  function syncApiUI(){
+    $("#provider").value = cfg.provider;
+    $("#apikey").value = cfg.key || "";
+    $("#model").value = cfg.model || "";
+    $("#modelHint").textContent = DEFAULT_MODEL[cfg.provider];
+    $("#model").placeholder = "비우면 " + DEFAULT_MODEL[cfg.provider];
+    $("#keyhint").textContent = KEY_HINT[cfg.provider];
+  }
+  $("#provider").addEventListener("change", e=>{ cfg.provider = e.target.value; saveCfg(); syncApiUI(); render(); });
+  $("#apikey").addEventListener("input", e=>{ cfg.key = e.target.value; saveCfg(); render(); });
+  $("#model").addEventListener("input", e=>{ cfg.model = e.target.value; saveCfg(); });
+  $("#clearkey").addEventListener("click", ()=>{ cfg.key = ""; saveCfg(); syncApiUI(); render(); });
+
+  $("#k").addEventListener("input", e=>$("#kVal").textContent = e.target.value);
+  $("#r").addEventListener("input", e=>$("#rVal").textContent = e.target.value);
+  $("#run").addEventListener("click", runGraph);
+  $("#stop").addEventListener("click", ()=>{ if(ctl) ctl.abort(); });
+  $("#reset").addEventListener("click", loadExample);
+  $("#suggest").addEventListener("click", async ()=>{
+    if(!llmReady() || state.running) return;
+    const passage = $("#passage").value.trim();
+    if(!passage){ state.error = "먼저 영어 지문을 입력하세요."; render(); return; }
+    const b = $("#suggest"); b.disabled = true; b.textContent = "생성 중…";
+    try{
+      state.suggestedQ = await fetchQuestions(passage);
+      if(!state.suggestedQ.length) throw new Error("질문 생성 결과를 읽지 못했습니다. 다시 시도하세요.");
+      state.error = null; renderQChips();
+    }catch(e){
+      state.error = (e && e.message) ? e.message : "질문 생성 실패";
+    }finally{ b.disabled = false; b.textContent = "지문에서 질문 제안 3개"; render(); }
+  });
+  $("#theme").addEventListener("click", ()=>{
+    const cur = document.documentElement.getAttribute("data-theme");
+    const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+    document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  });
+
+  syncApiUI();
+  loadExample();
+})();
+</script>
+</body>
+</html>
