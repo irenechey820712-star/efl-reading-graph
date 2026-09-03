@@ -109,6 +109,7 @@
   .qchip{text-align:left; background:var(--surface); border:1px solid var(--line-strong); border-radius:7px; padding:.4rem .55rem; font-size:.77rem; cursor:pointer; color:var(--ink); line-height:1.45}
   .qchip:hover{border-color:var(--accent)}
   .qchip b{color:var(--accent); font-family:"IBM Plex Mono",monospace; font-size:.66rem; margin-right:.4rem; letter-spacing:.02em}
+  .qnote{margin:.1rem 0 .2rem; font-size:.72rem; color:var(--retry); line-height:1.45}
 
   .run-row{display:flex; gap:.55rem; align-items:center; flex-wrap:wrap}
   .run{background:var(--accent); color:#fff; border:0; border-radius:8px; padding:.62rem 1.1rem; font-weight:600; font-size:.92rem; cursor:pointer}
@@ -438,7 +439,7 @@ ${ver}
   };
   const state = {
     running:false, error:null, isExample:true,
-    nodeState:{}, trace:[], retryTaken:false, suggestedQ:[],
+    nodeState:{}, trace:[], retryTaken:false, suggestedQ:[], qNote:"",
     chunks:[], retrieved:[], firstAnswer:"", verification:"", grade:"",
     finalAnswer:"", selfTask:"",
     open:new Set(["evi","first","grade","final","task"])
@@ -638,24 +639,90 @@ ${ver}
   }
 
   /* ---------------- run ---------------- */
+  /* 질문 파서 — 모델이 어떤 모양(문자열 배열, question/text 키, {questions:[]} 래핑, 코드펜스 등)으로
+     돌려줘도 {type,q} 배열로 정규화한다. */
+  function normalizeQuestions(data){
+    let arr = [];
+    if(Array.isArray(data)) arr = data;
+    else if(data && Array.isArray(data.questions)) arr = data.questions;
+    else if(data && typeof data === "object") arr = Object.values(data);
+    const out = [];
+    for(const x of arr){
+      let q = "", type = "";
+      if(typeof x === "string") q = x;
+      else if(x && typeof x === "object"){
+        q = x.q || x.question || x.Q || x.text || x.sentence || x.prompt || "";
+        type = x.type || x.category || x.kind || x.label || "";
+      }
+      q = String(q || "").replace(/^\s*\d+[.)]\s*/,"").trim();
+      if(q.length < 5) continue;
+      out.push({ type:(String(type||"").trim() || "질문"), q });
+    }
+    return out;
+  }
+
+  const TOPIC_STOP = new Set(("about above across after again against also although always among another any around because been before being between both cannot could does doing done during each either else even ever every everyone from further have having here however into its itself just least less like made make many more most much must never next only onto other over own perhaps rather really same several should since some someone something still such than that their them then there these they thing think this those though through thus together toward under until upon very well were what when where whether which while who whom whose will with within without would your".split(" ")));
+  function keyTopic(passage){
+    const counts = Object.create(null);
+    (String(passage).toLowerCase().match(/[a-z][a-z'’-]{3,}/g) || []).forEach(w=>{
+      if(STOP.has(w) || TOPIC_STOP.has(w)) return;
+      counts[w] = (counts[w] || 0) + 1;
+    });
+    let best = "", n = 0;
+    for(const w in counts){ if(counts[w] > n){ n = counts[w]; best = w; } }
+    return best || "the topic";
+  }
+  function localQuestions(passage){
+    const t = keyTopic(passage);
+    return [
+      { type:"사실", q:`According to the passage, what does the writer say about ${t}?` },
+      { type:"추론", q:`What can be inferred about ${t} from the examples the writer gives?` },
+      { type:"평가", q:`Do the details in the passage fully support the writer's conclusion about ${t}? Why or why not?` }
+    ];
+  }
+
   async function fetchQuestions(passage, signal){
     const prompt = `아래 영어 지문을 읽는 고등학생이 물을 법한 독해 질문 3개를 만든다. 응답은 기계가 파싱한다.
 - 사실 확인형 1개, 추론형 1개, 평가·비판형 1개
 - 각 질문은 영어 한 문장, 지문 내용만으로 답할 수 있어야 한다
+- 순수 JSON 배열만 출력한다. 코드펜스·설명·앞뒤 텍스트 금지.
 
-JSON 배열만 출력한다. 예:
+형식:
 [{"type":"사실","q":"..."},{"type":"추론","q":"..."},{"type":"평가","q":"..."}]
 
 지문:
 ${passage}`;
-    const raw = await callModel(prompt, { jsonHint:true, signal });
-    const data = tolerantJSON(raw);
-    const arr = Array.isArray(data) ? data : (data && Array.isArray(data.questions) ? data.questions : []);
-    return arr.filter(x=>x && x.q).map(x=>({ type:String(x.type||"질문").trim(), q:String(x.q).trim() })).slice(0,4);
+
+    let out = [], apiFailed = false;
+    for(let attempt = 0; attempt < 2 && out.length < 3; attempt++){
+      try{
+        const raw = await callModel(prompt, attempt === 0 ? { jsonHint:true, signal } : { signal });
+        const got = normalizeQuestions(tolerantJSON(raw));
+        if(got.length > out.length) out = got;
+      }catch(e){
+        if(e && e.name === "AbortError") throw e;
+        apiFailed = true;
+      }
+    }
+
+    let note = "";
+    if(out.length < 3){
+      const seen = new Set(out.map(x=>x.q.toLowerCase()));
+      for(const x of localQuestions(passage)){
+        if(out.length >= 3) break;
+        if(!seen.has(x.q.toLowerCase())) out.push(x);
+      }
+      note = apiFailed
+        ? "⚠ API 응답을 읽지 못해 지문 기반 기본 질문으로 채웠습니다. (API 키·모델명을 확인하면 맞춤 질문이 나옵니다)"
+        : "모델이 3개를 채우지 못해 지문 기반 기본 질문으로 보완했습니다.";
+    }
+    state.qNote = note;
+    return out.slice(0, 4);
   }
   function renderQChips(){
     const el = $("#qchips");
-    el.innerHTML = (state.suggestedQ||[]).map((x,i)=>
+    const note = state.qNote ? `<p class="qnote">${esc(state.qNote)}</p>` : "";
+    el.innerHTML = note + (state.suggestedQ||[]).map((x,i)=>
       `<button class="qchip" data-i="${i}"><b>${esc(x.type)}</b>${esc(x.q)}</button>`).join("");
     el.querySelectorAll(".qchip").forEach(c=>c.addEventListener("click", ()=>{
       $("#question").value = state.suggestedQ[+c.dataset.i].q;
@@ -673,7 +740,7 @@ ${passage}`;
 
     ctl = new AbortController();
     Object.assign(state, {
-      running:true, error:null, isExample:false, trace:[], retryTaken:false,
+      running:true, error:null, isExample:false, trace:[], retryTaken:false, qNote:"",
       nodeState:{}, chunks:[], retrieved:[], firstAnswer:"", verification:"",
       grade:"", finalAnswer:"", selfTask:""
     });
@@ -760,6 +827,7 @@ ${passage}`;
     $("#k").value = 2; $("#r").value = 1; $("#kVal").textContent = "2"; $("#rVal").textContent = "1";
     const chunks = chunkPassage(SAMPLE.passage);
     state.suggestedQ = [];
+    state.qNote = "";
     renderQChips();
     Object.assign(state, {
       isExample:true, running:false, error:null,
