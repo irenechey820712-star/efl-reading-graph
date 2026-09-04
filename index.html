@@ -227,9 +227,9 @@
         <input type="password" id="apikey" placeholder="키 붙여넣기" autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
-        <label>모델 <span class="hint" id="modelHint">gemini-2.0-flash</span></label>
+        <label>모델 <span class="hint" id="modelHint">gemini-flash-lite-latest</span></label>
         <input type="text" id="model" placeholder="비우면 기본값">
-        <span class="hint">무료 티어에서 <b>429(한도 초과)</b>가 잦으면 <b>gemini-2.5-flash-lite</b> 입력 — 분당·하루 한도가 더 큽니다. 한 번 실행에 API 3~5회 호출.</span>
+        <span class="hint">비우면 <b>gemini-flash-lite-latest</b> 사용(무료 한도 큼). 429가 잦으면 <b>gemini-2.5-flash</b> 등으로 변경. 한 번 실행에 API 3~5회 호출.</span>
       </div>
       <p class="apinote">키는 <b>이 컴퓨터 브라우저(localStorage)</b>에만 저장되고 선택한 제공자 API로만 전송됩니다. 공용 PC에서는 사용 후 <button class="linkbtn" id="clearkey">키 지우기</button>.</p>
     </div>
@@ -273,7 +273,7 @@
 
   /* ---------------- config (persisted) ---------------- */
   const LS = "efl-reading-graph-cfg";
-  const DEFAULT_MODEL = { gemini:"gemini-2.5-flash-lite", openai:"gpt-4o-mini" };
+  const DEFAULT_MODEL = { gemini:"gemini-flash-lite-latest", openai:"gpt-4o-mini" };
   const KEY_HINT = { gemini:"aistudio.google.com/apikey", openai:"platform.openai.com/api-keys" };
   const cfg = { provider:"gemini", key:"", model:"" };
   try{ Object.assign(cfg, JSON.parse(localStorage.getItem(LS) || "{}")); }catch(_){}
@@ -460,7 +460,7 @@ ${ver}
     if(res.status === 401 || res.status === 403) return "API 키가 거부되었습니다 (" + res.status + "). 키·제공자를 확인하세요." + (detail ? " — " + detail : "");
     if(res.status === 404) return "모델명을 찾을 수 없습니다 (404). 모델명을 확인하세요." + (detail ? " — " + detail : "");
     if(res.status === 429) return "요청 한도 초과 (429)" + (detail ? " — " + detail : ".")
-      + " · 무료 티어는 분당/하루 요청 수 제한이 있습니다. 메시지에 'per minute'이면 1분 뒤 재시도, 'per day'면 하루 할당량 소진(태평양시 자정 초기화) — 모델을 gemini-2.5-flash-lite 로 바꾸면 하루 한도가 더 큽니다.";
+      + " · 무료 티어는 분당/하루 요청 수 제한이 있습니다. 메시지에 'per minute'이면 1분 뒤 재시도, 'per day'면 하루 할당량 소진(태평양시 자정 초기화) — 모델 칸을 비우면 gemini-flash-lite-latest 를 쓰며 하루 한도가 더 큽니다.";
     return "요청 실패 (" + res.status + ")" + (detail ? " — " + detail : "");
   }
 
@@ -627,7 +627,7 @@ ${ver}
         <div class="errcard">
           <h3>&#9888; 실행이 중간에 멈췄습니다</h3>
           <div class="prose">${esc(state.error)}</div>
-          <p class="hint2"><b>429 · 'per minute'</b> → 1~2분 뒤 다시 <b>[그래프 실행]</b> (앱이 이미 몇 차례 자동 재시도합니다). <b>429 · 'per day'</b> → 오늘 무료 할당량 소진 — 왼쪽 <b>모델</b> 칸에 <b>gemini-2.5-flash-lite</b> 를 넣으면 하루 한도가 훨씬 큽니다. <b>400·403·404</b> → 키·모델명 확인. 한 번 실행에 API를 3~5회 부르니(답변·검증·재검색·최종화) 연속 실행은 피하세요.</p>
+          <p class="hint2"><b>429 · 'per minute'</b> → 1~2분 뒤 다시 <b>[그래프 실행]</b> (앱이 이미 몇 차례 자동 재시도합니다). <b>429 · 'per day'</b> → 오늘 무료 할당량 소진 — 왼쪽 <b>모델</b> 칸을 비우면 <b>gemini-flash-lite-latest</b> 를 쓰며 하루 한도가 훨씬 큽니다. <b>400·403·404</b> → 키·모델명 확인. 한 번 실행에 API를 3~5회 부르니(답변·검증·재검색·최종화) 연속 실행은 피하세요.</p>
         </div>` : ""}
 
       ${(!ex && !state.running && !state.firstAnswer && !state.trace.length) ? `
