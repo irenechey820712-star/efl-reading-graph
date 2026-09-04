@@ -457,8 +457,8 @@ ${ver}
     let detail = "";
     try{ const j = await res.json(); detail = (j.error && (j.error.message || j.error.status)) || ""; }catch(_){}
     if(res.status === 400) return "요청이 거부되었습니다 (400)" + (detail ? " — " + detail : "");
-    if(res.status === 401 || res.status === 403) return "API 키가 거부되었습니다 (" + res.status + "). 키·제공자를 확인하세요.";
-    if(res.status === 404) return "모델명을 찾을 수 없습니다 (404). 모델명을 확인하세요.";
+    if(res.status === 401 || res.status === 403) return "API 키가 거부되었습니다 (" + res.status + "). 키·제공자를 확인하세요." + (detail ? " — " + detail : "");
+    if(res.status === 404) return "모델명을 찾을 수 없습니다 (404). 모델명을 확인하세요." + (detail ? " — " + detail : "");
     if(res.status === 429) return "요청 한도 초과 (429)" + (detail ? " — " + detail : ".")
       + " · 무료 티어는 분당/하루 요청 수 제한이 있습니다. 메시지에 'per minute'이면 1분 뒤 재시도, 'per day'면 하루 할당량 소진(태평양시 자정 초기화) — 모델을 gemini-2.5-flash-lite 로 바꾸면 하루 한도가 더 큽니다.";
     return "요청 실패 (" + res.status + ")" + (detail ? " — " + detail : "");
