@@ -927,6 +927,9 @@ ${passage}`;
     if(!state.isExample || state.running) return;
     const p = $("#passage").value.trim();
     if(p === SAMPLE.passage.trim()) return;
+    // 지문을 새로 바꿨는데 질문칸에 예시(K-pop) 질문이 그대로면 비워서
+    // elicit가 새 지문에 맞는 질문을 자동 생성하게 한다.
+    if($("#question").value.trim() === SAMPLE.question.trim()) $("#question").value = "";
     Object.assign(state, {
       isExample:false, error:null, trace:[], retryTaken:false, nodeState:{},
       chunks:[], retrieved:[], firstAnswer:"", verification:"", grade:"",
